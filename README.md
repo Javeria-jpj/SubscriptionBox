@@ -1,17 +1,16 @@
-# subbox_app
+# SubBox
 
-A new Flutter project.
+Flutter subscription management app (Firebase + Riverpod).
 
-## Getting Started
+**Module 1:** project setup, Firebase integration, email/password authentication
+(sign up, sign in, password reset, sign out). User profiles are saved to Firestore `users/{uid}`.
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```
+lib/
+  main.dart               # Firebase init + auth routing
+  theme.dart              # colors & theme
+  services/auth_service.dart
+  screens/                # login, signup, forgot password, home
+  widgets/auth_widgets.dart
+  utils/validators.dart
+```

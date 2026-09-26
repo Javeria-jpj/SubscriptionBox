@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "730049145736",
+    "project_id": "subscription-box-app-9ad03",
+    "storage_bucket": "subscription-box-app-9ad03.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:730049145736:android:22a5031b5257595bcce83d",
+        "android_client_info": {
+          "package_name": "com.example.subbox_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCaaB3pxlZ5yxfU7ZGDhd86cLTMOJx_oWM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
