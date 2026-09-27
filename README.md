@@ -14,3 +14,5 @@ lib/
   widgets/auth_widgets.dart
   utils/validators.dart
 ```
+
+Logo icon by [bqlqn](https://www.flaticon.com/authors/bqlqn) from [Flaticon](https://www.flaticon.com/).

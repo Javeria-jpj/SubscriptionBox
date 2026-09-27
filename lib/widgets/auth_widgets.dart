@@ -27,8 +27,7 @@ class AuthLayout extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.inventory_2_rounded,
-                    size: 56, color: AppColors.primary),
+                const Center(child: AppLogo(size: 72)),
                 const SizedBox(height: 16),
                 Text(title, textAlign: TextAlign.center, style: heading(30)),
                 const SizedBox(height: 8),
@@ -55,6 +54,17 @@ class AuthLayout extends StatelessWidget {
       ),
     );
   }
+}
+
+/// SubBox logo. Icon by bqlqn from www.flaticon.com.
+class AppLogo extends StatelessWidget {
+  const AppLogo({super.key, this.size = 72});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) =>
+      Image.asset('assets/images/logo.png', width: size, height: size);
 }
 
 class AppTextField extends StatefulWidget {
