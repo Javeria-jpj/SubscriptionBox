@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/auth_service.dart';
 import '../utils/validators.dart';
-import '../widgets/auth_widgets.dart';
+import '../widgets/app_widgets.dart';
 
 class ForgotPasswordScreen extends ConsumerStatefulWidget {
   const ForgotPasswordScreen({super.key});

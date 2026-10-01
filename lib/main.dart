@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/verify_email_screen.dart';
 import 'services/auth_service.dart';
 import 'theme.dart';
 
@@ -26,7 +27,11 @@ class SubBoxApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: appTheme,
       home: user.when(
-        data: (u) => u == null ? const LoginScreen() : const HomeScreen(),
+        data: (u) => u == null
+            ? const LoginScreen()
+            : !u.emailVerified
+                ? const VerifyEmailScreen() // step 2: confirm email
+                : const HomeScreen(),
         loading: () =>
             const Scaffold(body: Center(child: CircularProgressIndicator())),
         error: (_, _) => const LoginScreen(),

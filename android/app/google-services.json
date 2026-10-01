@@ -12,7 +12,20 @@
           "package_name": "com.example.subbox_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "730049145736-8imj5a5k9n2282266mpg3e67kdu6rpld.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.subbox_app",
+            "certificate_hash": "41251dd579495963efdd1cb9b76fb1464e732ff2"
+          }
+        },
+        {
+          "client_id": "730049145736-e3hdmc4an6jc5nr5v3bbtvkk6102m6mb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCaaB3pxlZ5yxfU7ZGDhd86cLTMOJx_oWM"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "730049145736-e3hdmc4an6jc5nr5v3bbtvkk6102m6mb.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "730049145736-qv95be8juc5euaddolv3b58sakgnc9nm.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.subboxApp"
+              }
+            }
+          ]
         }
       }
     }

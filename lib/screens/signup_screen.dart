@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/auth_service.dart';
 import '../utils/validators.dart';
-import '../widgets/auth_widgets.dart';
+import '../widgets/app_widgets.dart';
 
 class SignUpScreen extends ConsumerStatefulWidget {
   const SignUpScreen({super.key});
@@ -72,6 +72,8 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
           ),
           SubmitButton(
               label: 'Create Account', loading: _loading, onPressed: _submit),
+          const OrDivider(),
+          const GoogleButton(),
         ],
       ),
     );

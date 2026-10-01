@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../services/auth_service.dart';
 import '../utils/validators.dart';
-import '../widgets/auth_widgets.dart';
+import '../widgets/app_widgets.dart';
 import 'forgot_password_screen.dart';
 import 'signup_screen.dart';
 
@@ -56,6 +55,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             isPassword: true,
           ),
           SubmitButton(label: 'Sign In', loading: _loading, onPressed: _submit),
+          const OrDivider(),
+          const GoogleButton(),
           TextButton(
             onPressed: () => _open(const ForgotPasswordScreen()),
             child: const Text('Forgot password?'),
