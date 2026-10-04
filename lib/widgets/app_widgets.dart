@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/subscription.dart';
-import '../services/auth_service.dart';
-import '../theme.dart';
+import 'package:subbox_app/models/subscription.dart';
+import 'package:subbox_app/services/auth_service.dart';
+import 'package:subbox_app/theme.dart';
 
 /// Shared widgets used across screens.
 

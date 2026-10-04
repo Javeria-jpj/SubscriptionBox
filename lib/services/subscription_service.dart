@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/subscription.dart';
-import 'auth_service.dart';
+import 'package:subbox_app/models/subscription.dart';
+import 'package:subbox_app/services/auth_service.dart';
 
 /// Firestore CRUD for the signed-in user's subscriptions,
 /// stored at `users/{uid}/subscriptions/{id}`.

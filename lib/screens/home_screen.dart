@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/subscription.dart';
-import '../services/auth_service.dart';
-import '../services/subscription_service.dart';
-import '../theme.dart';
-import '../widgets/app_widgets.dart';
-import 'subscription_form_screen.dart';
+import 'package:subbox_app/models/subscription.dart';
+import 'package:subbox_app/services/auth_service.dart';
+import 'package:subbox_app/services/subscription_service.dart';
+import 'package:subbox_app/theme.dart';
+import 'package:subbox_app/widgets/app_widgets.dart';
+import 'package:subbox_app/screens/subscription_form_screen.dart';
 
 /// Subscriptions dashboard: stat cards, due-soon alert, filters and list.
 class HomeScreen extends ConsumerStatefulWidget {

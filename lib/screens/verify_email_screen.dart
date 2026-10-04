@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../services/auth_service.dart';
-import '../theme.dart';
-import '../widgets/app_widgets.dart';
+import 'package:subbox_app/services/auth_service.dart';
+import 'package:subbox_app/theme.dart';
+import 'package:subbox_app/widgets/app_widgets.dart';
 
 /// Step 2 of sign-in: the user must click the link emailed to them.
 /// Checks automatically every few seconds, then opens Home.

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/auth_service.dart';
-import '../utils/validators.dart';
-import '../widgets/app_widgets.dart';
-import 'forgot_password_screen.dart';
-import 'signup_screen.dart';
+import 'package:subbox_app/services/auth_service.dart';
+import 'package:subbox_app/utils/validators.dart';
+import 'package:subbox_app/widgets/app_widgets.dart';
+import 'package:subbox_app/screens/forgot_password_screen.dart';
+import 'package:subbox_app/screens/signup_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});

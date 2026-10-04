@@ -2,12 +2,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'firebase_options.dart';
-import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/verify_email_screen.dart';
-import 'services/auth_service.dart';
-import 'theme.dart';
+import 'package:subbox_app/firebase_options.dart';
+import 'package:subbox_app/screens/home_screen.dart';
+import 'package:subbox_app/screens/login_screen.dart';
+import 'package:subbox_app/screens/verify_email_screen.dart';
+import 'package:subbox_app/services/auth_service.dart';
+import 'package:subbox_app/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
