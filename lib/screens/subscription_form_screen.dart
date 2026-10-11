@@ -7,11 +7,15 @@ import 'package:subbox_app/theme.dart';
 import 'package:subbox_app/widgets/app_widgets.dart';
 
 /// Add a new subscription, or edit/delete an existing one when [sub] is given.
+/// Shown as a tab inside Home, so the navigation stays visible.
 /// Two columns on wide screens (web), one column on phones.
 class SubscriptionFormScreen extends ConsumerStatefulWidget {
-  const SubscriptionFormScreen({super.key, this.sub});
+  const SubscriptionFormScreen({super.key, this.sub, required this.onDone});
 
   final Subscription? sub;
+
+  /// Called after save, delete, mark-paid or cancel (Home goes back to the dashboard).
+  final VoidCallback onDone;
 
   @override
   ConsumerState<SubscriptionFormScreen> createState() =>
@@ -32,6 +36,7 @@ class _SubscriptionFormScreenState
   late DateTime _renewal =
       widget.sub?.nextRenewal ?? DateTime.now().add(const Duration(days: 30));
   late bool _isTrial = widget.sub?.isTrial ?? false;
+  late final Set<int> _reminders = {...widget.sub?.reminders ?? const [3, 1, 0]};
   bool _saving = false;
 
   bool get _isEdit => widget.sub != null;
@@ -61,8 +66,9 @@ class _SubscriptionFormScreenState
             isTrial: _isTrial,
             paymentMethod: _payment.text.trim(),
             cancelUrl: _cancelUrl.text.trim(),
+            reminders: _reminders.toList()..sort((a, b) => b - a),
           ));
-      if (mounted) Navigator.pop(context);
+      widget.onDone();
     } catch (e) {
       if (mounted) showMessage(context, 'Could not save: $e');
       setState(() => _saving = false);
@@ -88,7 +94,7 @@ class _SubscriptionFormScreenState
     );
     if (ok != true) return;
     await ref.read(subscriptionServiceProvider).delete(widget.sub!.id!);
-    if (mounted) Navigator.pop(context);
+    widget.onDone();
   }
 
   // ---------- Sections ----------
@@ -289,6 +295,95 @@ class _SubscriptionFormScreenState
         ]),
       );
 
+  Widget _alerts() => Panel(
+        title: 'Renewal Alerts',
+        trailing: const Tag('Reminders'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Phone notification at 9:00 AM before each renewal.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final o in reminderOptions.entries)
+                FilterChip(
+                  avatar: Icon(
+                      _reminders.contains(o.key)
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: _reminders.contains(o.key)
+                          ? AppColors.onPrimary
+                          : AppColors.muted),
+                  label: Text(o.value),
+                  selected: _reminders.contains(o.key),
+                  onSelected: (on) => setState(() =>
+                      on ? _reminders.add(o.key) : _reminders.remove(o.key)),
+                ),
+            ]),
+          ],
+        ),
+      );
+
+  /// Payment history + "Mark as Paid" (edit mode only).
+  late final _paymentStream = _isEdit
+      ? ref.read(subscriptionServiceProvider).watchPayments(widget.sub!.id!)
+      : null;
+
+  Widget _payments() => Panel(
+        title: 'Payments',
+        trailing: Tag('Due ${formatDate(widget.sub!.nextRenewal)}'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton.icon(
+              onPressed: () async {
+                if (await confirmMarkPaid(context, ref, widget.sub!)) {
+                  widget.onDone(); // renewal date changed
+                }
+              },
+              icon: const Icon(Icons.check_circle_outline),
+              label: Text(
+                  'Mark as Paid · ${formatMoney(widget.sub!.price, widget.sub!.currency)}'),
+            ),
+            const _Label('PAYMENT HISTORY'),
+            StreamBuilder(
+              stream: _paymentStream,
+              builder: (context, snap) {
+                final list = snap.data ?? [];
+                if (list.isEmpty) {
+                  return const Text('No payments recorded yet.',
+                      style: TextStyle(color: AppColors.muted));
+                }
+                final total = list.fold(0.0, (sum, p) => sum + p.amount);
+                return Column(children: [
+                  for (final p in list)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.receipt_long,
+                          color: AppColors.primary),
+                      title: Text('Renewal ${formatDate(p.forRenewal)}'),
+                      subtitle: Text('Paid ${formatDate(p.paidAt)}',
+                          style: const TextStyle(color: AppColors.muted)),
+                      trailing: Text(formatMoney(p.amount, p.currency),
+                          style: heading(15)),
+                    ),
+                  const Divider(color: AppColors.border),
+                  Row(children: [
+                    Text('Total paid · ${list.length} payment${list.length == 1 ? '' : 's'}',
+                        style: const TextStyle(color: AppColors.muted)),
+                    const Spacer(),
+                    Text(formatMoney(total, list.first.currency),
+                        style: heading(16, color: AppColors.primary)),
+                  ]),
+                ]);
+              },
+            ),
+          ],
+        ),
+      );
+
   Widget _cancellation() => Panel(
         title: 'Cancellation Link',
         child: Column(
@@ -312,27 +407,16 @@ class _SubscriptionFormScreenState
 
   @override
   Widget build(BuildContext context) {
-    final left = [if (!_isEdit) _presets(), _service()];
-    final right = [_billing(), _trial(), _cancellation()];
+    final left = [_isEdit ? _payments() : _presets(), _service()];
+    final right = [_billing(), _trial(), _alerts(), _cancellation()];
     const gap = SizedBox(height: 16);
 
-    return Scaffold(
-      appBar: AppBar(
-        actions: [
-          if (_isEdit)
-            IconButton(
-              tooltip: 'Delete',
-              icon: const Icon(Icons.delete_outline, color: AppColors.error),
-              onPressed: _delete,
-            ),
-        ],
-      ),
-      body: Form(
+    return Form(
         key: _formKey,
         child: LayoutBuilder(builder: (context, box) {
           final wide = box.maxWidth >= 900;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
               const Align(
                   alignment: Alignment.centerLeft,
@@ -356,21 +440,40 @@ class _SubscriptionFormScreenState
               else
                 Column(spacing: 16, children: [...left, ...right]),
               gap,
-              Align(
-                alignment: Alignment.centerRight,
-                child: SizedBox(
-                  width: wide ? 320 : double.infinity,
-                  child: SubmitButton(
-                    label: _isEdit ? 'Save Changes' : 'Save Subscription',
-                    loading: _saving,
-                    onPressed: _save,
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  if (_isEdit)
+                    OutlinedButton.icon(
+                      onPressed: _delete,
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Delete'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        minimumSize: const Size(140, 52),
+                      ),
+                    ),
+                  OutlinedButton(
+                    onPressed: widget.onDone,
+                    style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(140, 52)),
+                    child: const Text('Cancel'),
                   ),
-                ),
+                  SizedBox(
+                    width: wide ? 320 : double.infinity,
+                    child: SubmitButton(
+                      label: _isEdit ? 'Save Changes' : 'Save Subscription',
+                      loading: _saving,
+                      onPressed: _save,
+                    ),
+                  ),
+                ],
               ),
             ],
           );
         }),
-      ),
     );
   }
 }

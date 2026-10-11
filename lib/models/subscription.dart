@@ -22,6 +22,14 @@ const cycles = <String, double>{
 
 const currencies = ['USD', 'PKR', 'EUR', 'GBP'];
 
+/// Reminder options: days before renewal -> label.
+const reminderOptions = <int, String>{
+  7: '7 days before',
+  3: '3 days before',
+  1: '1 day before',
+  0: 'On the day',
+};
+
 /// Popular services for one-tap "fast fill" on the add screen.
 const presets = [
   (name: 'Netflix', category: 'Entertainment', price: 15.49, logo: 'netflix'),
@@ -60,6 +68,7 @@ class Subscription {
     this.isTrial = false,
     this.paymentMethod = '',
     this.cancelUrl = '',
+    this.reminders = const [3, 1, 0],
   });
 
   final String? id; // null until saved to Firestore
@@ -72,6 +81,7 @@ class Subscription {
   final bool isTrial;
   final String paymentMethod;
   final String cancelUrl;
+  final List<int> reminders; // days before renewal to notify
 
   /// Price converted to a per-month amount, e.g. $120/year -> $10/month.
   double get monthlyCost => price * cycles[cycle]! / 12;
@@ -79,6 +89,19 @@ class Subscription {
   int get daysLeft {
     final now = DateUtils.dateOnly(DateTime.now());
     return DateUtils.dateOnly(nextRenewal).difference(now).inDays;
+  }
+
+  /// The renewal date one billing cycle after [nextRenewal],
+  /// e.g. Jan 31 + 1 month = Feb 28 (day is clamped to the month's length).
+  DateTime get nextCycleDate {
+    final d = nextRenewal;
+    if (cycle == 'Weekly') return d.add(const Duration(days: 7));
+    final months = {'Monthly': 1, 'Quarterly': 3, 'Yearly': 12}[cycle]!;
+    final firstOfMonth = DateTime(d.year, d.month + months);
+    final lastDay =
+        DateUtils.getDaysInMonth(firstOfMonth.year, firstOfMonth.month);
+    return DateTime(firstOfMonth.year, firstOfMonth.month,
+        d.day > lastDay ? lastDay : d.day, d.hour, d.minute);
   }
 
   factory Subscription.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -94,6 +117,7 @@ class Subscription {
       isTrial: d['isTrial'] ?? false,
       paymentMethod: d['paymentMethod'] ?? '',
       cancelUrl: d['cancelUrl'] ?? '',
+      reminders: List<int>.from(d['reminders'] ?? const [3, 1, 0]),
     );
   }
 
@@ -107,7 +131,34 @@ class Subscription {
         'isTrial': isTrial,
         'paymentMethod': paymentMethod,
         'cancelUrl': cancelUrl,
+        'reminders': reminders,
       };
+}
+
+/// One recorded payment, stored at
+/// `users/{uid}/subscriptions/{subId}/payments/{id}`.
+class Payment {
+  const Payment({
+    required this.amount,
+    required this.currency,
+    required this.paidAt,
+    required this.forRenewal,
+  });
+
+  final double amount;
+  final String currency;
+  final DateTime paidAt; // when the user marked it paid
+  final DateTime forRenewal; // the renewal date this payment covered
+
+  factory Payment.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data()!;
+    return Payment(
+      amount: (d['amount'] as num).toDouble(),
+      currency: d['currency'],
+      paidAt: (d['paidAt'] as Timestamp).toDate(),
+      forRenewal: (d['forRenewal'] as Timestamp).toDate(),
+    );
+  }
 }
 
 String formatMoney(double amount, String currency) {

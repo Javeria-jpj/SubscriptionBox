@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:subbox_app/models/subscription.dart';
 import 'package:subbox_app/services/auth_service.dart';
+import 'package:subbox_app/services/subscription_service.dart';
 import 'package:subbox_app/theme.dart';
 
 /// Shared widgets used across screens.
@@ -302,4 +304,50 @@ class ServiceIcon extends StatelessWidget {
       child: Image.asset(logo, fit: BoxFit.contain),
     );
   }
+}
+
+/// Asks to confirm, records the payment and moves the renewal forward.
+/// Returns true when the payment was recorded.
+Future<bool> confirmMarkPaid(
+    BuildContext context, WidgetRef ref, Subscription sub) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: Text('Mark ${sub.name} as paid?'),
+      content: Text(
+        '${formatMoney(sub.price, sub.currency)} for the '
+        '${formatDate(sub.nextRenewal)} renewal.\n'
+        'Next renewal moves to ${formatDate(sub.nextCycleDate)}.',
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+            child: const Text('Mark Paid')),
+      ],
+    ),
+  );
+  if (ok != true) return false;
+  try {
+    await ref.read(subscriptionServiceProvider).markPaid(sub);
+    if (context.mounted) {
+      showMessage(context,
+          'Payment recorded. Next renewal: ${formatDate(sub.nextCycleDate)}');
+    }
+    return true;
+  } catch (e) {
+    if (context.mounted) showMessage(context, 'Could not record payment: $e');
+    return false;
+  }
+}
+
+/// Opens the subscription's cancellation page in the browser.
+Future<void> openCancelLink(BuildContext context, String url) async {
+  final uri = Uri.tryParse(url.startsWith('http') ? url : 'https://$url');
+  final opened = uri != null &&
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!opened && context.mounted) showMessage(context, 'Could not open $url');
 }

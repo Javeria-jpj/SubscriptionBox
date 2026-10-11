@@ -7,11 +7,14 @@ import 'package:subbox_app/screens/home_screen.dart';
 import 'package:subbox_app/screens/login_screen.dart';
 import 'package:subbox_app/screens/verify_email_screen.dart';
 import 'package:subbox_app/services/auth_service.dart';
+import 'package:subbox_app/services/notification_service.dart';
+import 'package:subbox_app/services/subscription_service.dart';
 import 'package:subbox_app/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await NotificationService.init();
   runApp(const ProviderScope(child: SubBoxApp()));
 }
 
@@ -21,6 +24,10 @@ class SubBoxApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(userProvider);
+
+    // Keep phone reminders in sync with the latest subscriptions.
+    ref.listen(subscriptionsProvider,
+        (_, next) => next.whenData(NotificationService.syncAll));
 
     return MaterialApp(
       title: 'SubBox',

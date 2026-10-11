@@ -30,6 +30,13 @@ Built by **Javeria Tahir** for the Zynvex Solutions Internship Program (Batch 4,
 - **Real-time sync:** changes appear instantly on every signed-in device
 - **Responsive layout:** one column on phones, a wider layout on web
 
+### Module 3: Payment Tracking, Renewals & Notifications
+- **Mark as Paid:** records the payment and moves the next renewal forward one billing cycle (month-end and leap-year safe)
+- **Payment history** for each subscription, with the total paid
+- **Deadlines tab:** a 7-day runway total, then renewals grouped as Critical (under 24h, with a live countdown), This week and Later
+- **Renewal reminders:** phone notifications at 9:00 AM, 7 days / 3 days / 1 day before or on the day (chosen per subscription)
+- **One-tap cancellation link** that opens the service's cancel page
+
 ---
 
 ## Tech Stack
@@ -41,6 +48,7 @@ Built by **Javeria Tahir** for the Zynvex Solutions Internship Program (Batch 4,
 | Database | Cloud Firestore |
 | State management | Riverpod |
 | Fonts | Google Fonts (Hanken Grotesk, Geist) |
+| Notifications | flutter_local_notifications (scheduled reminders) |
 | Platforms | Android, iOS, Web |
 
 ---
@@ -58,14 +66,16 @@ lib/
 │
 ├── services/
 │   ├── auth_service.dart              # Sign up / sign in / Google / email verification / reset / sign out
-│   └── subscription_service.dart      # Firestore create, read, update, delete for subscriptions
+│   ├── subscription_service.dart      # Firestore CRUD + mark as paid + payment history
+│   └── notification_service.dart      # Schedules renewal reminders on the phone
 │
 ├── screens/
 │   ├── login_screen.dart              # Email + password login, Google button
 │   ├── signup_screen.dart             # Create account
 │   ├── verify_email_screen.dart       # Step 2 for new email accounts
 │   ├── forgot_password_screen.dart    # Send password reset link
-│   ├── home_screen.dart               # Dashboard: stats, alerts, filters, subscription cards
+│   ├── home_screen.dart               # Dashboard tab + bottom navigation
+│   ├── deadlines_screen.dart          # Deadlines tab: critical / this week / later, countdowns
 │   └── subscription_form_screen.dart  # Add / edit / delete a subscription
 │
 ├── widgets/
@@ -96,8 +106,9 @@ main.dart ──► Login / Sign Up / Google ──► Verify Email (new email a
 
 ```
 users/{uid}                          # name, email, createdAt
-users/{uid}/subscriptions/{id}       # name, category, price, currency, cycle,
+users/{uid}/subscriptions/{id}       # name, category, price, currency, cycle, reminders,
                                      # nextRenewal, isTrial, paymentMethod, cancelUrl
+users/{uid}/subscriptions/{id}/payments/{id}  # amount, currency, paidAt, forRenewal
 ```
 
 ---
@@ -152,8 +163,8 @@ flutter analyze
 |---|---|---|---|
 | 1 | Project Setup, Firebase Integration & User Authentication | Sep 27, 2026 | ✅ Done |
 | 2 | Subscription Management, Categories & Firestore CRUD | Oct 04, 2026 | ✅ Done |
-| 3 | Payment Tracking, Renewals & Notifications | Oct 11, 2026 | ⏳ Next |
-| 4 | Dashboard, Expense Analytics & Smart Subscription Insights | Oct 18, 2026 | Planned |
+| 3 | Payment Tracking, Renewals & Notifications | Oct 11, 2026 | ✅ Done |
+| 4 | Dashboard, Expense Analytics & Smart Subscription Insights | Oct 18, 2026 | ⏳ Next |
 | 5 | Testing, Security, UI/UX Refinement & Final Deployment | Oct 25, 2026 | Planned |
 
 ---

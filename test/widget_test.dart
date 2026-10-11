@@ -42,6 +42,14 @@ void main() {
     expect(logoFor('Electricity'), isNull);
   });
 
+  test('next renewal after payment', () {
+    expect(sub('Monthly', 1, DateTime(2026, 1, 31)).nextCycleDate, DateTime(2026, 2, 28));
+    expect(sub('Monthly', 1, DateTime(2026, 12, 15)).nextCycleDate, DateTime(2027, 1, 15));
+    expect(sub('Quarterly', 1, DateTime(2026, 11, 30)).nextCycleDate, DateTime(2027, 2, 28));
+    expect(sub('Yearly', 1, DateTime(2028, 2, 29)).nextCycleDate, DateTime(2029, 2, 28));
+    expect(sub('Weekly', 1, DateTime(2026, 10, 30)).nextCycleDate, DateTime(2026, 11, 6));
+  });
+
   test('formatting', () {
     expect(formatMoney(12, 'USD'), '\$12.00');
     expect(formatMoney(1500, 'PKR'), 'Rs 1500.00');
