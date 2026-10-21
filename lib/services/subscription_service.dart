@@ -31,20 +31,31 @@ class SubscriptionService {
       : _col.doc(sub.id).set(sub.toMap());
 
   /// Removes a subscription added by mistake (no savings recorded).
-  Future<void> delete(String id) => _col.doc(id).delete();
+  Future<void> delete(String id) async =>
+      (await _removeBatch(id)).commit();
 
   /// The user cancelled this service: remember what it cost (for
   /// "saved to date") and remove it from the active list, in one batch.
-  Future<void> cancel(Subscription sub) =>
-      (FirebaseFirestore.instance.batch()
+  Future<void> cancel(Subscription sub) async =>
+      (await _removeBatch(sub.id!)
             ..set(_cancelled.doc(), {
               'name': sub.name,
               'monthlyCost': sub.monthlyCost,
               'currency': sub.currency,
               'cancelledAt': Timestamp.now(),
-            })
-            ..delete(_col.doc(sub.id)))
+            }))
           .commit();
+
+  /// A batch deleting a subscription together with its payment history
+  /// (Firestore does not delete subcollections automatically).
+  Future<WriteBatch> _removeBatch(String id) async {
+    final doc = _col.doc(id);
+    final batch = FirebaseFirestore.instance.batch();
+    for (final p in (await doc.collection('payments').get()).docs) {
+      batch.delete(p.reference);
+    }
+    return batch..delete(doc);
+  }
 
   /// Clears the price-change flag once the user has seen the new price.
   Future<void> acceptPrice(Subscription sub) =>
