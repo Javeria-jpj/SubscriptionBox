@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:subbox_app/models/subscription.dart';
 import 'package:subbox_app/services/subscription_service.dart';
 import 'package:subbox_app/theme.dart';
+import 'package:subbox_app/utils/validators.dart';
 import 'package:subbox_app/widgets/app_widgets.dart';
 
 /// Add a new subscription, or edit/delete an existing one when [sub] is given.
@@ -54,12 +55,14 @@ class _SubscriptionFormScreenState
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
+    final old = widget.sub;
+    final price = double.parse(_price.text);
     try {
       await ref.read(subscriptionServiceProvider).save(Subscription(
             id: widget.sub?.id,
             name: _name.text.trim(),
             category: _category,
-            price: double.parse(_price.text),
+            price: price,
             currency: _currency,
             cycle: _cycle,
             nextRenewal: _renewal,
@@ -67,6 +70,15 @@ class _SubscriptionFormScreenState
             paymentMethod: _payment.text.trim(),
             cancelUrl: _cancelUrl.text.trim(),
             reminders: _reminders.toList()..sort((a, b) => b - a),
+            // Remember the old price when it changes (for price-hike alerts).
+            // A new cycle or currency can't be compared, so it resets.
+            previousPrice: old == null ||
+                    old.cycle != _cycle ||
+                    old.currency != _currency
+                ? null
+                : old.price != price
+                    ? old.previousPrice ?? old.price
+                    : old.previousPrice,
           ));
       widget.onDone();
     } catch (e) {
@@ -75,26 +87,44 @@ class _SubscriptionFormScreenState
     }
   }
 
+  /// Remove: either the user cancelled the service (counts towards
+  /// "saved to date") or it was added by mistake.
   Future<void> _delete() async {
-    final ok = await showDialog<bool>(
+    final sub = widget.sub!;
+    final choice = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Delete ${widget.sub!.name}?'),
-        content: const Text('This subscription will be removed permanently.'),
+      builder: (dialog) => AlertDialog(
+        title: Text('Remove ${sub.name}?'),
+        content: Text(
+            'Did you cancel it? We\'ll count the '
+            '${formatMoney(sub.monthlyCost * 12, sub.currency)}/year '
+            'towards your savings.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(dialog),
+              child: const Text('Keep')),
           TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete',
+              onPressed: () => Navigator.pop(dialog, 'delete'),
+              child: const Text('Added by mistake',
                   style: TextStyle(color: AppColors.error))),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialog, 'cancel'),
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
+              child: const Text('I cancelled it')),
         ],
       ),
     );
-    if (ok != true) return;
-    await ref.read(subscriptionServiceProvider).delete(widget.sub!.id!);
-    widget.onDone();
+    if (choice == null) return;
+    final service = ref.read(subscriptionServiceProvider);
+    try {
+      await (choice == 'cancel' ? service.cancel(sub) : service.delete(sub.id!));
+      if (mounted && choice == 'cancel') {
+        showMessage(context, 'Nice! ${sub.name} added to your savings.');
+      }
+      widget.onDone();
+    } catch (e) {
+      if (mounted) showMessage(context, 'Could not remove: $e');
+    }
   }
 
   // ---------- Sections ----------
@@ -147,12 +177,13 @@ class _SubscriptionFormScreenState
             const _Label('SERVICE NAME'),
             TextFormField(
               controller: _name,
+              maxLength: 60,
               decoration: const InputDecoration(
                 hintText: 'e.g. Notion, OpenAI, AWS',
                 prefixIcon: Icon(Icons.layers_outlined),
+                counterText: '',
               ),
-              validator: (v) =>
-                  (v ?? '').trim().isEmpty ? 'Enter a service name' : null,
+              validator: validateServiceName,
             ),
             const _Label('CATEGORY'),
             Wrap(spacing: 8, runSpacing: 8, children: [
@@ -166,10 +197,13 @@ class _SubscriptionFormScreenState
             const _Label('PAYMENT METHOD (OPTIONAL)'),
             TextFormField(
               controller: _payment,
+              maxLength: 40,
               decoration: const InputDecoration(
-                hintText: 'e.g. Visa ••8841',
+                hintText: 'e.g. Visa ••8841 (never the full card number)',
                 prefixIcon: Icon(Icons.credit_card),
+                counterText: '',
               ),
+              validator: validatePaymentLabel,
             ),
           ],
         ),
@@ -197,9 +231,7 @@ class _SubscriptionFormScreenState
                         prefixIcon:
                             Icon(Icons.attach_money, color: AppColors.primary),
                       ),
-                      validator: (v) => (double.tryParse(v ?? '') ?? 0) <= 0
-                          ? 'Enter a valid amount'
-                          : null,
+                      validator: validatePrice,
                     ),
                   ],
                 ),
@@ -397,6 +429,7 @@ class _SubscriptionFormScreenState
                 hintText: 'https://notion.so/billing/cancel',
                 prefixIcon: Icon(Icons.link),
               ),
+              validator: validateUrl,
             ),
             const SizedBox(height: 8),
             const Text('Keep the cancel page handy for when you want out.',
@@ -449,7 +482,7 @@ class _SubscriptionFormScreenState
                     OutlinedButton.icon(
                       onPressed: _delete,
                       icon: const Icon(Icons.delete_outline),
-                      label: const Text('Delete'),
+                      label: const Text('Remove'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.error,
                         minimumSize: const Size(140, 52),

@@ -6,8 +6,8 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:subbox_app/models/subscription.dart';
 
 /// Schedules renewal reminders as local phone notifications.
-/// Reminders fire at 9:00 AM, N days before each renewal (N from
-/// [Subscription.reminders]). Not available on web.
+/// Reminders fire at the user's chosen hour (9:00 AM by default), N days
+/// before each renewal (N from [Subscription.reminders]). Not available on web.
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _ready = false;
@@ -41,31 +41,46 @@ class NotificationService {
     _ready = true;
   }
 
-  /// Replaces all scheduled reminders with fresh ones for [subs].
-  /// Called whenever the subscriptions list changes.
-  static Future<void> syncAll(List<Subscription> subs) async {
+  /// Upcoming reminders for [subs], soonest first: one per selected
+  /// "days before" option, at [ReminderSettings.hour] local time.
+  /// Reminders already in the past are skipped.
+  static List<({Subscription sub, int days, DateTime at})> plan(
+      List<Subscription> subs, ReminderSettings settings, DateTime now) {
+    if (!settings.enabled) return [];
+    return [
+      for (final s in subs)
+        for (final days in s.reminders)
+          if (_at(s, days, settings.hour) case final at when at.isAfter(now))
+            (sub: s, days: days, at: at),
+    ]..sort((a, b) => a.at.compareTo(b.at));
+  }
+
+  static DateTime _at(Subscription s, int days, int hour) {
+    final day = s.nextRenewal.subtract(Duration(days: days));
+    return DateTime(day.year, day.month, day.day, hour);
+  }
+
+  /// Replaces all scheduled reminders with fresh ones.
+  /// Called whenever the subscriptions or reminder settings change.
+  static Future<void> syncAll(
+      List<Subscription> subs, ReminderSettings settings) async {
     if (!_ready) return;
     await _plugin.cancelAll();
-    final now = DateTime.now();
     var id = 0;
-    for (final s in subs) {
-      for (final days in s.reminders) {
-        final renewalDay = s.nextRenewal.subtract(Duration(days: days));
-        final at = DateTime(renewalDay.year, renewalDay.month, renewalDay.day, 9);
-        if (at.isBefore(now)) continue; // already passed
-        await _plugin.zonedSchedule(
-          id: id++,
-          title: days == 0
-              ? '${s.name} renews today'
-              : '${s.name} renews in $days day${days == 1 ? '' : 's'}',
-          body: '${formatMoney(s.price, s.currency)} will be charged on '
-              '${formatDate(s.nextRenewal)}${s.isTrial ? ' (free trial ends)' : ''}.',
-          // Same moment in time, expressed in UTC.
-          scheduledDate: tz.TZDateTime.from(at, tz.UTC),
-          notificationDetails: _details,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        );
-      }
+    for (final r in plan(subs, settings, DateTime.now())) {
+      final s = r.sub;
+      await _plugin.zonedSchedule(
+        id: id++,
+        title: r.days == 0
+            ? '${s.name} renews today'
+            : '${s.name} renews in ${r.days} day${r.days == 1 ? '' : 's'}',
+        body: '${formatMoney(s.price, s.currency)} will be charged on '
+            '${formatDate(s.nextRenewal)}${s.isTrial ? ' (free trial ends)' : ''}.',
+        // Same moment in time, expressed in UTC.
+        scheduledDate: tz.TZDateTime.from(r.at, tz.UTC),
+        notificationDetails: _details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      );
     }
   }
 }

@@ -3,14 +3,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:subbox_app/models/subscription.dart';
+import 'package:subbox_app/services/analytics.dart';
 import 'package:subbox_app/services/auth_service.dart';
 import 'package:subbox_app/services/subscription_service.dart';
 import 'package:subbox_app/theme.dart';
 import 'package:subbox_app/widgets/app_widgets.dart';
+import 'package:subbox_app/screens/account_sheet.dart';
+import 'package:subbox_app/screens/alerts_screen.dart';
+import 'package:subbox_app/screens/analytics_screen.dart';
 import 'package:subbox_app/screens/deadlines_screen.dart';
 import 'package:subbox_app/screens/subscription_form_screen.dart';
 
-/// Subscriptions dashboard: stat cards, due-soon alert, filters and list.
+/// Main screen after sign-in: navigation (bottom bar on phones, sidebar
+/// on web) around the Dashboard, Deadlines, Add, Alerts and Analytics tabs.
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -20,27 +25,35 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _category; // null = show all
-  int _tab = 0; // index into _tabs: 0 Dashboard, 1 Deadlines, 2 Subscriptions
+  String _search = '';
+  int _tab = 0; // index into _tabs
   Subscription? _editing; // subscription open in the form (null = add new)
 
-  /// Shows the add/edit form as the Subscriptions tab (navigation stays visible).
+  /// Shows the add/edit form as a tab (navigation stays visible).
   void _openForm([Subscription? sub]) => setState(() {
-    _tab = 2;
-    _editing = sub;
-  });
+        _tab = 2;
+        _editing = sub;
+      });
 
   void _selectTab(int i) => setState(() {
-    _tab = i;
-    _editing = null; // the Subscriptions tab opens a blank "add" form
-  });
+        _tab = i;
+        _editing = null; // the Add tab opens a blank form
+      });
 
   @override
   Widget build(BuildContext context) {
     final subs = ref.watch(subscriptionsProvider);
+    final payments = ref.watch(paymentsProvider).value ?? [];
+    final cancelled = ref.watch(cancelledProvider).value ?? [];
+    final settings =
+        ref.watch(settingsProvider).value ?? const ReminderSettings();
     final user = ref.watch(userProvider).value;
+    final all = subs.value ?? [];
     final wide = MediaQuery.sizeOf(context).width >= 900; // web / tablet
-    final critical = (subs.value ?? []).where((s) => s.daysLeft <= 1).length;
-    void signOut() => ref.read(authServiceProvider).signOut();
+    final badges = {
+      1: all.where((s) => s.daysLeft <= 1).length, // due within 24h
+      3: all.where(isUrgent).length,
+    };
 
     final page = Scaffold(
       appBar: AppBar(
@@ -63,104 +76,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               label: const Text('Track Subscription'),
               style: FilledButton.styleFrom(minimumSize: const Size(0, 42)),
             ),
-          _NotificationBell(
-            dueSoon: (subs.value ?? []).where((s) => s.daysLeft <= 3).toList(),
-            onTap: _openForm,
+          IconButton(
+            tooltip: 'Alerts',
+            onPressed: () => _selectTab(3),
+            icon: Badge(
+              isLabelVisible: badges[3]! > 0,
+              label: Text('${badges[3]}'),
+              backgroundColor: AppColors.danger,
+              child: const Icon(Icons.notifications_outlined),
+            ),
           ),
           if (!wide)
-            PopupMenuButton(
+            IconButton(
               tooltip: 'Account',
+              onPressed: () => showAccountSheet(context),
               icon: CircleAvatar(
                 radius: 16,
                 backgroundColor: AppColors.surfaceHigh,
                 child: Text(
-                  (user?.displayName ?? '?').characters.first.toUpperCase(),
+                  (user?.displayName ?? '?').characters.firstOrNull
+                          ?.toUpperCase() ??
+                      '?',
                   style: const TextStyle(color: AppColors.primary),
                 ),
               ),
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  enabled: false,
-                  child: Text(
-                    '${user?.displayName ?? ''}\n${user?.email ?? ''}',
-                  ),
-                ),
-                PopupMenuItem(onTap: signOut, child: const Text('Sign out')),
-              ],
             ),
           const SizedBox(width: 8),
         ],
       ),
       body: subs.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Could not load: $e')),
-        data: (all) => _tab == 2
-            ? SubscriptionFormScreen(
-                key: ValueKey(_editing?.id ?? 'new'),
-                sub: _editing,
-                onDone: () => _selectTab(0),
-              )
-            : _tab == 1
-            ? DeadlinesView(subs: all, onOpen: _openForm)
-            : LayoutBuilder(
-                builder: (context, box) {
-                  final wide = box.maxWidth >= 900;
-                  final shown = _category == null
-                      ? all
-                      : all.where((s) => s.category == _category).toList();
-                  final dueSoon = all.where((s) => s.daysLeft <= 3).toList();
-                  final cardWidth = wide
-                      ? (box.maxWidth - 32 - 12) / 2
-                      : box.maxWidth;
-
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                    children: [
-                      _Stats(subs: all, dueSoon: dueSoon.length, wide: wide),
-                      if (dueSoon.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        _DueSoon(subs: dueSoon, onTap: _openForm),
-                      ],
-                      const SizedBox(height: 20),
-                      _CategoryChips(
-                        subs: all,
-                        selected: _category,
-                        onSelected: (c) => setState(() => _category = c),
-                      ),
-                      const SizedBox(height: 16),
-                      if (shown.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 40),
-                          child: Text(
-                            'No subscriptions yet.\nTrack your first one below.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: AppColors.muted),
-                          ),
-                        ),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          for (final s in shown)
-                            SizedBox(
-                              width: cardWidth,
-                              child: _SubscriptionCard(
-                                sub: s,
-                                onTap: () => _openForm(s),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      FilledButton.icon(
-                        onPressed: _openForm,
-                        icon: const Icon(Icons.add_circle_outline),
-                        label: const Text('Track Another Subscription'),
-                      ),
-                    ],
-                  );
-                },
-              ),
+        error: (e, _) => EmptyState(
+          icon: Icons.cloud_off,
+          title: 'Could not load your subscriptions',
+          message: 'Check your internet connection and try again.\n($e)',
+          action: FilledButton(
+            onPressed: () => ref.invalidate(subscriptionsProvider),
+            style: FilledButton.styleFrom(minimumSize: const Size(160, 46)),
+            child: const Text('Retry'),
+          ),
+        ),
+        data: (all) => switch (_tab) {
+          1 => DeadlinesView(subs: all, onOpen: _openForm),
+          2 => SubscriptionFormScreen(
+              key: ValueKey(_editing?.id ?? 'new'),
+              sub: _editing,
+              onDone: () => _selectTab(0),
+            ),
+          3 => AlertsView(
+              subs: all,
+              payments: payments,
+              settings: settings,
+              onOpen: _openForm,
+            ),
+          4 => AnalyticsView(
+              subs: all,
+              payments: payments,
+              cancelled: cancelled,
+              onOpen: _openForm,
+            ),
+          _ => _Dashboard(
+              all: all,
+              cancelled: cancelled,
+              category: _category,
+              search: _search,
+              onCategory: (c) => setState(() => _category = c),
+              onSearch: (q) => setState(() => _search = q),
+              onOpen: _openForm,
+              onSeeInsights: () => _selectTab(4),
+            ),
+        },
       ),
       bottomNavigationBar: wide
           ? null
@@ -171,14 +156,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               indicatorColor: AppColors.primaryDark.withValues(alpha: 0.25),
               destinations: [
                 for (final (i, t) in _tabs.indexed)
-                  NavigationDestination(
-                    icon: Badge(
-                      isLabelVisible: i == 1 && critical > 0,
-                      backgroundColor: AppColors.danger,
-                      child: Icon(t.$1),
-                    ),
-                    label: t.$2,
-                  ),
+                  i == 2
+                      // Center "+" button, like the design.
+                      ? NavigationDestination(
+                          icon: const IconBox(Icons.add,
+                              color: AppColors.primary, size: 40),
+                          selectedIcon: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.add,
+                                color: AppColors.onPrimary),
+                          ),
+                          label: t.short,
+                        )
+                      : NavigationDestination(
+                          icon: Badge(
+                            isLabelVisible: (badges[i] ?? 0) > 0,
+                            backgroundColor: AppColors.danger,
+                            child: Icon(t.icon),
+                          ),
+                          label: t.short,
+                        ),
               ],
             ),
     );
@@ -196,10 +198,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 children: [
                   _SideBar(
                     selected: _tab,
-                    critical: critical,
+                    badges: badges,
                     user: user,
                     onSelect: _selectTab,
-                    onSignOut: signOut,
+                    onAccount: () => showAccountSheet(context),
                   ),
                   Expanded(child: page),
                 ],
@@ -211,66 +213,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 /// Navigation tabs, shared by the phone bottom bar and the web sidebar.
 const _tabs = [
-  (Icons.dashboard_outlined, 'Dashboard'),
-  (Icons.alarm, 'Deadlines'),
-  (Icons.receipt_long, 'Subscriptions'),
+  (icon: Icons.dashboard_outlined, short: 'Dashboard', long: 'Dashboard'),
+  (icon: Icons.alarm, short: 'Deadlines', long: 'Deadlines & Timers'),
+  (icon: Icons.add, short: 'Add', long: 'Track Subscription'),
+  (icon: Icons.crisis_alert, short: 'Alerts', long: 'Alerts & Cutoffs'),
+  (icon: Icons.insights, short: 'Analytics', long: 'Analytics & Runway'),
 ];
-
-/// Bell with a count badge; opens a sheet listing renewals due soon.
-class _NotificationBell extends StatelessWidget {
-  const _NotificationBell({required this.dueSoon, required this.onTap});
-
-  final List<Subscription> dueSoon;
-  final ValueChanged<Subscription> onTap;
-
-  void _showAlerts(BuildContext context) => showModalBottomSheet(
-    context: context,
-    backgroundColor: AppColors.surface,
-    builder: (sheet) => ListView(
-      shrinkWrap: true,
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('Notifications', style: heading(20)),
-        const SizedBox(height: 8),
-        if (dueSoon.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Text(
-              'You\'re all caught up. No renewals in the next 3 days.',
-              style: TextStyle(color: AppColors.muted),
-            ),
-          ),
-        for (final s in dueSoon)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: ServiceIcon(name: s.name, category: s.category),
-            title: Text(s.name, style: heading(15)),
-            subtitle: Text(
-              formatMoney(s.price, s.currency),
-              style: const TextStyle(color: AppColors.muted),
-            ),
-            trailing: Tag(renewalTag(s).$1, color: renewalTag(s).$2),
-            onTap: () {
-              Navigator.pop(sheet);
-              onTap(s);
-            },
-          ),
-      ],
-    ),
-  );
-
-  @override
-  Widget build(BuildContext context) => IconButton(
-    tooltip: 'Notifications',
-    onPressed: () => _showAlerts(context),
-    icon: Badge(
-      isLabelVisible: dueSoon.isNotEmpty,
-      label: Text('${dueSoon.length}'),
-      backgroundColor: AppColors.danger,
-      child: const Icon(Icons.notifications_outlined),
-    ),
-  );
-}
 
 /// Badge text and color for how soon a subscription renews.
 (String, Color) renewalTag(Subscription s) {
@@ -282,14 +230,132 @@ class _NotificationBell extends StatelessWidget {
   return ('$what in $d days', d <= 3 ? AppColors.warning : AppColors.muted);
 }
 
-/// Totals per currency, e.g. "$27.99 + Rs 1500.00".
-String totals(List<Subscription> subs, {int months = 1}) {
-  final sums = <String, double>{};
-  for (final s in subs) {
-    sums[s.currency] = (sums[s.currency] ?? 0) + s.monthlyCost * months;
+/// Dashboard tab: stats, due-soon alert, insights, runway, filters and list.
+class _Dashboard extends StatelessWidget {
+  const _Dashboard({
+    required this.all,
+    required this.cancelled,
+    required this.category,
+    required this.search,
+    required this.onCategory,
+    required this.onSearch,
+    required this.onOpen,
+    required this.onSeeInsights,
+  });
+
+  final List<Subscription> all;
+  final List<Cancellation> cancelled;
+  final String? category;
+  final String search;
+  final ValueChanged<String?> onCategory;
+  final ValueChanged<String> onSearch;
+  final ValueChanged<Subscription?> onOpen;
+  final VoidCallback onSeeInsights;
+
+  @override
+  Widget build(BuildContext context) {
+    if (all.isEmpty) {
+      return EmptyState(
+        icon: Icons.inventory_2_outlined,
+        title: 'No subscriptions yet',
+        message: 'Track Netflix, Spotify, ChatGPT and more to see what you '
+            'spend and get reminded before every renewal.',
+        action: FilledButton.icon(
+          onPressed: () => onOpen(null),
+          icon: const Icon(Icons.add_circle_outline),
+          label: const Text('Track Your First Subscription'),
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 50)),
+        ),
+      );
+    }
+
+    final query = search.trim().toLowerCase();
+    final shown = all
+        .where((s) => category == null || s.category == category)
+        .where((s) => s.name.toLowerCase().contains(query))
+        .toList();
+    final dueSoon = all.where((s) => s.daysLeft <= 3).toList();
+    final insights = buildInsights(all, DateTime.now());
+
+    return LayoutBuilder(
+      builder: (context, box) {
+        final wide = box.maxWidth >= 900;
+
+        final list = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 12,
+          children: [
+            _CategoryChips(
+                subs: all, selected: category, onSelected: onCategory),
+            TextField(
+              onChanged: onSearch,
+              decoration: const InputDecoration(
+                hintText: 'Search subscriptions',
+                prefixIcon: Icon(Icons.search),
+                isDense: true,
+              ),
+            ),
+            if (shown.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Text('No subscriptions match.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.muted)),
+              ),
+            for (final s in shown)
+              _SubscriptionCard(sub: s, onTap: () => onOpen(s)),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: () => onOpen(null),
+              icon: const Icon(Icons.add_circle_outline),
+              label: const Text('Track Another Subscription'),
+            ),
+          ],
+        );
+
+        final side = [
+          _RunwayPanel(subs: all, onOpen: onOpen),
+          if (insights.isNotEmpty)
+            Panel(
+              title: 'Optimization Insights',
+              trailing: TextButton(
+                  onPressed: onSeeInsights, child: const Text('See all')),
+              child: Column(spacing: 10, children: [
+                for (final i in insights.take(wide ? 3 : 2))
+                  InsightCard(insight: i, onOpen: onOpen),
+              ]),
+            ),
+          if (cancelled.isNotEmpty) _SavedPanel(cancelled: cancelled),
+        ];
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+          children: [
+            _Stats(subs: all, dueSoon: dueSoon.length, wide: wide),
+            if (dueSoon.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _DueSoon(subs: dueSoon, onTap: onOpen),
+            ],
+            const SizedBox(height: 16),
+            if (wide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: list),
+                  const SizedBox(width: 16),
+                  SizedBox(
+                    width: 360,
+                    child: Column(spacing: 16, children: side),
+                  ),
+                ],
+              )
+            else
+              Column(spacing: 16, children: [...side, list]),
+          ],
+        );
+      },
+    );
   }
-  if (sums.isEmpty) return formatMoney(0, 'USD');
-  return sums.entries.map((e) => formatMoney(e.value, e.key)).join(' + ');
 }
 
 class _Stats extends StatelessWidget {
@@ -302,23 +368,26 @@ class _Stats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trials = subs.where((s) => s.isTrial).length;
-    final cards = [
-      _StatCard(
+    String total(int months) =>
+        sumByCurrency(subs, (s) => s.monthlyCost * months, (s) => s.currency);
+
+    return StatGrid(wide: wide, cards: [
+      StatCard(
         'Monthly commitment',
-        totals(subs),
+        total(1),
         '/mo',
         footer: const Text(
           'Across all billing cycles',
           style: TextStyle(color: AppColors.muted, fontSize: 12),
         ),
       ),
-      _StatCard(
+      StatCard(
         'Annualized run-rate',
-        totals(subs, months: 12),
+        total(12),
         '/yr',
         footer: _CategoryBar(subs: subs),
       ),
-      _StatCard(
+      StatCard(
         'Active subscriptions',
         '${subs.length}',
         'active',
@@ -327,7 +396,7 @@ class _Stats extends StatelessWidget {
           style: const TextStyle(color: AppColors.warning, fontSize: 12),
         ),
       ),
-      _StatCard(
+      StatCard(
         'Action required',
         '$dueSoon',
         'due',
@@ -337,81 +406,11 @@ class _Stats extends StatelessWidget {
           style: TextStyle(color: AppColors.muted, fontSize: 12),
         ),
       ),
-    ];
-
-    // Rows of 2 (phone) or 4 (web). Cards grow to fit their text, and
-    // IntrinsicHeight keeps cards in the same row equally tall.
-    final perRow = wide ? 4 : 2;
-    return Column(
-      spacing: 12,
-      children: [
-        for (var i = 0; i < cards.length; i += perRow)
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 12,
-              children: [
-                for (final card in cards.skip(i).take(perRow))
-                  Expanded(child: card),
-              ],
-            ),
-          ),
-      ],
-    );
+    ]);
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard(
-    this.label,
-    this.value,
-    this.suffix, {
-    required this.footer,
-    this.color = AppColors.text,
-  });
-
-  final String label, value, suffix;
-  final Widget footer;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label.toUpperCase(), style: labelStyle),
-          const SizedBox(height: 10),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: value,
-                    style: heading(28, color: color),
-                  ),
-                  TextSpan(
-                    text: ' $suffix',
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          footer,
-        ],
-      ),
-    );
-  }
-}
-
-/// Colored bar showing how many subscriptions are in each category.
+/// Colored bar showing each category's share of the monthly cost.
 class _CategoryBar extends StatelessWidget {
   const _CategoryBar({required this.subs});
 
@@ -419,23 +418,33 @@ class _CategoryBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (subs.isEmpty) {
+    final data = spendByCategory(subs);
+    final total = data.fold(0.0, (sum, e) => sum + e.value);
+    if (total == 0) {
       return const Text(
         'No data yet',
         style: TextStyle(color: AppColors.muted, fontSize: 12),
       );
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Row(
-        children: [
-          for (final c in categories.entries)
-            if (subs.any((s) => s.category == c.key))
+    return Tooltip(
+      message: [
+        for (final e in data) '${e.key}: ${(e.value / total * 100).round()}%',
+      ].join('\n'),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Row(
+          children: [
+            for (final e in data)
               Expanded(
-                flex: subs.where((s) => s.category == c.key).length,
-                child: Container(height: 6, color: c.value.$2),
+                // Shares in tenths of a percent, at least 1 so it's visible.
+                flex: (e.value / total * 1000).round().clamp(1, 1000),
+                child: Container(
+                  height: 6,
+                  color: (categories[e.key] ?? categories['Other']!).$2,
+                ),
               ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -520,6 +529,93 @@ class _DueSoon extends StatelessWidget {
   }
 }
 
+/// "Upcoming 7-Day Runway": every charge in the next week as a timeline.
+class _RunwayPanel extends StatelessWidget {
+  const _RunwayPanel({required this.subs, required this.onOpen});
+
+  final List<Subscription> subs;
+  final ValueChanged<Subscription> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final end = now.add(const Duration(days: 7));
+    final charges = [
+      for (final s in subs)
+        for (final d in s.chargesUntil(end)) (sub: s, date: d),
+    ]..sort((a, b) => a.date.compareTo(b.date));
+
+    return Panel(
+      title: 'Upcoming 7-Day Runway',
+      trailing: Text(runway(subs, now), style: heading(16)),
+      child: charges.isEmpty
+          ? const Text('No charges in the next 7 days.',
+              style: TextStyle(color: AppColors.muted))
+          : Column(children: [
+              for (final c in charges)
+                InkWell(
+                  onTap: () => onOpen(c.sub),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(children: [
+                      Icon(Icons.circle,
+                          size: 10, color: renewalTag(c.sub).$2),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(c.sub.name,
+                                overflow: TextOverflow.ellipsis,
+                                style: heading(14)),
+                            Text(formatDate(c.date).toUpperCase(),
+                                style: labelStyle),
+                          ],
+                        ),
+                      ),
+                      Text(formatMoney(c.sub.price, c.sub.currency),
+                          style: heading(14)),
+                    ]),
+                  ),
+                ),
+            ]),
+    );
+  }
+}
+
+/// Money saved per year by cancelling subscriptions.
+class _SavedPanel extends StatelessWidget {
+  const _SavedPanel({required this.cancelled});
+
+  final List<Cancellation> cancelled;
+
+  @override
+  Widget build(BuildContext context) => Panel(
+        child: Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('SAVED TO DATE', style: labelStyle),
+                const SizedBox(height: 4),
+                FittedBox(
+                  child: Text('${savedPerYear(cancelled)}/year',
+                      style: heading(22, color: AppColors.primary)),
+                ),
+                Text(
+                  'From ${cancelled.length} cancelled '
+                  'subscription${cancelled.length == 1 ? '' : 's'}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const IconBox(Icons.account_balance_wallet_outlined,
+              color: AppColors.primary),
+        ]),
+      );
+}
+
 class _CategoryChips extends StatelessWidget {
   const _CategoryChips({
     required this.subs,
@@ -534,13 +630,13 @@ class _CategoryChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget chip(String? category, String label) => Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: selected == category,
-        onSelected: (_) => onSelected(category),
-      ),
-    );
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: selected == category,
+            onSelected: (_) => onSelected(category),
+          ),
+        );
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -568,8 +664,8 @@ class _SubscriptionCard extends StatelessWidget {
     final subtitle = sub.isTrial
         ? 'Free trial period'
         : sub.paymentMethod.isNotEmpty
-        ? sub.paymentMethod
-        : sub.category;
+            ? sub.paymentMethod
+            : sub.category;
 
     return InkWell(
       onTap: onTap,
@@ -593,9 +689,8 @@ class _SubscriptionCard extends StatelessWidget {
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: sub.isTrial
-                              ? AppColors.warning
-                              : AppColors.muted,
+                          color:
+                              sub.isTrial ? AppColors.warning : AppColors.muted,
                         ),
                       ),
                     ],
@@ -621,8 +716,11 @@ class _SubscriptionCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Row(
+              spacing: 8,
               children: [
                 Tag(tagText, color: tagColor),
+                if (sub.priceChange > 0)
+                  const Tag('Price up', color: AppColors.warning),
                 const Spacer(),
                 Text(
                   formatDate(sub.nextRenewal),
@@ -641,17 +739,17 @@ class _SubscriptionCard extends StatelessWidget {
 class _SideBar extends StatelessWidget {
   const _SideBar({
     required this.selected,
-    required this.critical,
+    required this.badges,
     required this.user,
     required this.onSelect,
-    required this.onSignOut,
+    required this.onAccount,
   });
 
   final int selected;
-  final int critical; // renewals due within 24h
+  final Map<int, int> badges; // tab index -> count needing attention
   final User? user;
   final ValueChanged<int> onSelect;
-  final VoidCallback onSignOut;
+  final VoidCallback onAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -691,11 +789,11 @@ class _SideBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   leading: Icon(
-                    t.$1,
+                    t.icon,
                     color: i == selected ? AppColors.onPrimary : AppColors.text,
                   ),
                   title: Text(
-                    t.$2,
+                    t.long,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: i == selected
@@ -703,60 +801,65 @@ class _SideBar extends StatelessWidget {
                           : AppColors.text,
                     ),
                   ),
-                  trailing: i == 1 && critical > 0
-                      ? Tag('$critical critical', color: AppColors.error)
+                  trailing: (badges[i] ?? 0) > 0
+                      ? Tag(
+                          '${badges[i]} ${i == 1 ? 'critical' : 'urgent'}',
+                          color: AppColors.error,
+                        )
                       : null,
                 ),
               ),
             ),
           const Spacer(),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
+          Material(
+            color: AppColors.surfaceHigh,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: onAccount,
               borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: AppColors.background,
-                  child: Text(
-                    name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-                    style: const TextStyle(color: AppColors.primary),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: heading(14),
-                        overflow: TextOverflow.ellipsis,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: AppColors.background,
+                      child: Text(
+                        name.isEmpty
+                            ? '?'
+                            : name.characters.first.toUpperCase(),
+                        style: const TextStyle(color: AppColors.primary),
                       ),
-                      Text(
-                        user?.email ?? '',
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 11,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: heading(14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            user?.email ?? '',
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 11,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const Icon(
+                      Icons.settings_outlined,
+                      size: 20,
+                      color: AppColors.muted,
+                    ),
+                  ],
                 ),
-                IconButton(
-                  tooltip: 'Sign out',
-                  onPressed: onSignOut,
-                  icon: const Icon(
-                    Icons.logout,
-                    size: 20,
-                    color: AppColors.muted,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],

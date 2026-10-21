@@ -25,9 +25,17 @@ class SubBoxApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(userProvider);
 
-    // Keep phone reminders in sync with the latest subscriptions.
-    ref.listen(subscriptionsProvider,
-        (_, next) => next.whenData(NotificationService.syncAll));
+    // Keep phone reminders in sync with the subscriptions and settings.
+    void sync() {
+      final subs = ref.read(subscriptionsProvider).value;
+      final settings = ref.read(settingsProvider).value;
+      if (subs != null && settings != null) {
+        NotificationService.syncAll(subs, settings);
+      }
+    }
+
+    ref.listen(subscriptionsProvider, (_, _) => sync());
+    ref.listen(settingsProvider, (_, _) => sync());
 
     return MaterialApp(
       title: 'SubBox',

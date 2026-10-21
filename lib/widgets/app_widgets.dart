@@ -178,6 +178,114 @@ class Panel extends StatelessWidget {
   }
 }
 
+/// Metric card: small label, big value with a suffix, and a footer.
+class StatCard extends StatelessWidget {
+  const StatCard(
+    this.label,
+    this.value,
+    this.suffix, {
+    super.key,
+    required this.footer,
+    this.color = AppColors.text,
+  });
+
+  final String label, value, suffix;
+  final Widget footer;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(), style: labelStyle),
+          const SizedBox(height: 10),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: value, style: heading(28, color: color)),
+                  TextSpan(
+                    text: ' $suffix',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          footer,
+        ],
+      ),
+    );
+  }
+}
+
+/// [StatCard]s in rows of 2 (phone) or 4 (web). Cards grow to fit their
+/// text, and IntrinsicHeight keeps cards in the same row equally tall.
+class StatGrid extends StatelessWidget {
+  const StatGrid({super.key, required this.cards, required this.wide});
+
+  final List<Widget> cards;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    final perRow = wide ? 4 : 2;
+    return Column(
+      spacing: 12,
+      children: [
+        for (var i = 0; i < cards.length; i += perRow)
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 12,
+              children: [
+                for (final card in cards.skip(i).take(perRow))
+                  Expanded(child: card),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Centered icon + message for screens with nothing to show yet.
+class EmptyState extends StatelessWidget {
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+  });
+
+  final IconData icon;
+  final String title, message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            IconBox(icon, color: AppColors.primary, size: 64),
+            const SizedBox(height: 16),
+            Text(title, style: heading(20), textAlign: TextAlign.center),
+            const SizedBox(height: 6),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.muted)),
+            if (action != null) ...[const SizedBox(height: 20), action!],
+          ]),
+        ),
+      );
+}
+
 /// Small uppercase badge, e.g. "RENEWS IN 3 DAYS".
 class Tag extends StatelessWidget {
   const Tag(this.text, {super.key, this.color = AppColors.primary});
@@ -346,8 +454,10 @@ Future<bool> confirmMarkPaid(
 
 /// Opens the subscription's cancellation page in the browser.
 Future<void> openCancelLink(BuildContext context, String url) async {
-  final uri = Uri.tryParse(url.startsWith('http') ? url : 'https://$url');
+  final uri = Uri.tryParse(url.contains('://') ? url : 'https://$url');
+  // Only open web pages (never javascript:, file:, intent: ... links).
   final opened = uri != null &&
+      (uri.scheme == 'https' || uri.scheme == 'http') &&
       await launchUrl(uri, mode: LaunchMode.externalApplication);
   if (!opened && context.mounted) showMessage(context, 'Could not open $url');
 }

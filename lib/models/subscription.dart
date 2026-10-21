@@ -69,6 +69,7 @@ class Subscription {
     this.paymentMethod = '',
     this.cancelUrl = '',
     this.reminders = const [3, 1, 0],
+    this.previousPrice,
   });
 
   final String? id; // null until saved to Firestore
@@ -82,6 +83,10 @@ class Subscription {
   final String paymentMethod;
   final String cancelUrl;
   final List<int> reminders; // days before renewal to notify
+  final double? previousPrice; // set when the price changes, until accepted
+
+  /// Price difference since the last change (positive = price went up).
+  double get priceChange => previousPrice == null ? 0 : price - previousPrice!;
 
   /// Price converted to a per-month amount, e.g. $120/year -> $10/month.
   double get monthlyCost => price * cycles[cycle]! / 12;
@@ -91,18 +96,13 @@ class Subscription {
     return DateUtils.dateOnly(nextRenewal).difference(now).inDays;
   }
 
-  /// The renewal date one billing cycle after [nextRenewal],
-  /// e.g. Jan 31 + 1 month = Feb 28 (day is clamped to the month's length).
-  DateTime get nextCycleDate {
-    final d = nextRenewal;
-    if (cycle == 'Weekly') return d.add(const Duration(days: 7));
-    final months = {'Monthly': 1, 'Quarterly': 3, 'Yearly': 12}[cycle]!;
-    final firstOfMonth = DateTime(d.year, d.month + months);
-    final lastDay =
-        DateUtils.getDaysInMonth(firstOfMonth.year, firstOfMonth.month);
-    return DateTime(firstOfMonth.year, firstOfMonth.month,
-        d.day > lastDay ? lastDay : d.day, d.hour, d.minute);
-  }
+  /// The renewal date one billing cycle after [nextRenewal].
+  DateTime get nextCycleDate => addCycle(nextRenewal, cycle);
+
+  /// Every charge date from [nextRenewal] up to (not including) [end].
+  List<DateTime> chargesUntil(DateTime end) => [
+        for (var d = nextRenewal; d.isBefore(end); d = addCycle(d, cycle)) d,
+      ];
 
   factory Subscription.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data()!;
@@ -118,6 +118,7 @@ class Subscription {
       paymentMethod: d['paymentMethod'] ?? '',
       cancelUrl: d['cancelUrl'] ?? '',
       reminders: List<int>.from(d['reminders'] ?? const [3, 1, 0]),
+      previousPrice: (d['previousPrice'] as num?)?.toDouble(),
     );
   }
 
@@ -132,7 +133,20 @@ class Subscription {
         'paymentMethod': paymentMethod,
         'cancelUrl': cancelUrl,
         'reminders': reminders,
+        'previousPrice': previousPrice,
       };
+}
+
+/// Adds one billing [cycle] to [d], e.g. Jan 31 + 1 month = Feb 28
+/// (the day is clamped to the month's length).
+DateTime addCycle(DateTime d, String cycle) {
+  if (cycle == 'Weekly') return d.add(const Duration(days: 7));
+  final months = {'Monthly': 1, 'Quarterly': 3, 'Yearly': 12}[cycle]!;
+  final firstOfMonth = DateTime(d.year, d.month + months);
+  final lastDay =
+      DateUtils.getDaysInMonth(firstOfMonth.year, firstOfMonth.month);
+  return DateTime(firstOfMonth.year, firstOfMonth.month,
+      d.day > lastDay ? lastDay : d.day, d.hour, d.minute);
 }
 
 /// One recorded payment, stored at
@@ -161,15 +175,71 @@ class Payment {
   }
 }
 
+/// A subscription the user cancelled, kept to show money saved.
+/// Stored at `users/{uid}/cancelled/{id}`.
+class Cancellation {
+  const Cancellation({
+    required this.name,
+    required this.monthlyCost,
+    required this.currency,
+    required this.cancelledAt,
+  });
+
+  final String name;
+  final double monthlyCost;
+  final String currency;
+  final DateTime cancelledAt;
+
+  factory Cancellation.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data()!;
+    return Cancellation(
+      name: d['name'],
+      monthlyCost: (d['monthlyCost'] as num).toDouble(),
+      currency: d['currency'],
+      cancelledAt: (d['cancelledAt'] as Timestamp).toDate(),
+    );
+  }
+}
+
+/// Reminder preferences, stored on `users/{uid}` as `reminderSettings`.
+class ReminderSettings {
+  const ReminderSettings({this.enabled = true, this.hour = 9});
+
+  final bool enabled;
+  final int hour; // 0-23, local time the reminder fires
+
+  factory ReminderSettings.fromMap(Map<String, dynamic>? m) => ReminderSettings(
+        enabled: m?['enabled'] ?? true,
+        hour: ((m?['hour'] ?? 9) as int).clamp(6, 22), // choices in the UI
+      );
+
+  Map<String, dynamic> toMap() => {'enabled': enabled, 'hour': hour};
+}
+
 String formatMoney(double amount, String currency) {
   const symbols = {'USD': '\$', 'PKR': 'Rs ', 'EUR': '€', 'GBP': '£'};
   return '${symbols[currency] ?? '$currency '}${amount.toStringAsFixed(2)}';
 }
 
-String formatDate(DateTime d) {
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  return '${months[d.month - 1]} ${d.day}, ${d.year}';
+String formatDate(DateTime d) => '${monthName(d)} ${d.day}, ${d.year}';
+
+/// Short month name, e.g. "Oct".
+String monthName(DateTime d) => const [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ][d.month - 1];
+
+/// "9:00 AM" style label for an hour of the day.
+String formatHour(int hour) =>
+    '${hour % 12 == 0 ? 12 : hour % 12}:00 ${hour < 12 ? 'AM' : 'PM'}';
+
+/// Sums [amount] per currency and joins them, e.g. "$27.99 + Rs 1500.00".
+String sumByCurrency<T>(Iterable<T> items, double Function(T) amount,
+    String Function(T) currency) {
+  final sums = <String, double>{};
+  for (final i in items) {
+    sums[currency(i)] = (sums[currency(i)] ?? 0) + amount(i);
+  }
+  if (sums.isEmpty) return formatMoney(0, 'USD');
+  return sums.entries.map((e) => formatMoney(e.value, e.key)).join(' + ');
 }

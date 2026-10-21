@@ -37,6 +37,44 @@ Built by **Javeria Tahir** for the Zynvex Solutions Internship Program (Batch 4,
 - **Renewal reminders:** phone notifications at 9:00 AM, 7 days / 3 days / 1 day before or on the day (chosen per subscription)
 - **One-tap cancellation link** that opens the service's cancel page
 
+### Module 4: Dashboard, Expense Analytics & Smart Subscription Insights
+- **New navigation** (matching the design): Dashboard · Deadlines · **+** · Alerts · Analytics on phones, and a sidebar on web
+- **Dashboard:**
+  - search box, an **Upcoming 7-Day Runway** timeline and an **Optimization Insights** preview
+  - **Saved to date** total, and a "Price up" tag on subscriptions whose price went up
+- **Analytics & Runway tab:**
+  - monthly run-rate, projected annual cost, average cost and money saved
+  - **spending by category** donut chart
+  - **12-month cash flow:** what will actually be charged each month (yearly/quarterly plans land in their renewal month)
+  - **payment history:** paid per month for the last 6 months, compared with last month
+  - **biggest costs** ranking
+  - **currency switcher** (amounts are never mixed or converted between currencies)
+  - **export to CSV** (copied to the clipboard, ready to paste into Excel or Google Sheets)
+- **Smart insights** (rule-based, most urgent first):
+  - trial converting soon
+  - renewal overdue
+  - **price increase detected** (with yearly impact)
+  - pay yearly instead of monthly
+  - overlapping services in the same category
+  - one subscription taking 40%+ of the budget
+- **Alerts tab:**
+  - **Urgent:** due within 3 days, overdue or price went up, with Cancel page / Mark paid / Accept new rate actions
+  - **Scheduled:** every upcoming reminder
+  - **History:** all payments
+  - **Reminder settings:** turn reminders on or off and choose the time of day (synced to the phone)
+- **Cancel vs. delete:** removing a subscription asks "I cancelled it" (counts towards savings) or "Added by mistake"
+
+### Module 5: Testing, Security, UI/UX Refinement & Deployment
+- **Tests:** 39 automated tests for costs, dates, the 12-month projection, insights, reminders, CSV export and validators, plus widget tests that render the Analytics screen on phone and web sizes
+- **Security:**
+  - [firestore.rules](firestore.rules): users can only access their own data, every write is checked for allowed fields, types and limits, and payment records cannot be edited
+  - input validation: amount limits, name length, http(s)-only cancel links (blocks `javascript:` links), and full card numbers are rejected in "payment method"
+  - CSV export guards against spreadsheet formula injection
+  - web hosting security headers (HSTS, no framing, nosniff)
+- **Account settings:** change password (reset email), sign out, and **delete account** (removes all data, then the account; needs a recent sign-in)
+- **UI/UX:** empty states with a clear next step, retry on connection errors, consistent cards and tags, responsive phone and web layouts
+- **Deployment:** release builds for web (Firebase Hosting) and Android (APK)
+
 ---
 
 ## Tech Stack
@@ -65,21 +103,26 @@ lib/
 │   └── subscription.dart              # Subscription model, categories, cycles, presets, formatting helpers
 │
 ├── services/
-│   ├── auth_service.dart              # Sign up / sign in / Google / email verification / reset / sign out
-│   ├── subscription_service.dart      # Firestore CRUD + mark as paid + payment history
-│   └── notification_service.dart      # Schedules renewal reminders on the phone
+│   ├── auth_service.dart              # Sign up / sign in / Google / email verification / reset / delete account
+│   ├── subscription_service.dart      # Firestore CRUD, mark as paid, payments, cancellations, settings
+│   ├── analytics.dart                 # Spending analytics, projections, smart insights, CSV (pure functions)
+│   └── notification_service.dart      # Plans and schedules renewal reminders on the phone
 │
 ├── screens/
 │   ├── login_screen.dart              # Email + password login, Google button
 │   ├── signup_screen.dart             # Create account
 │   ├── verify_email_screen.dart       # Step 2 for new email accounts
 │   ├── forgot_password_screen.dart    # Send password reset link
-│   ├── home_screen.dart               # Dashboard tab + bottom navigation
+│   ├── home_screen.dart               # Navigation + Dashboard tab
 │   ├── deadlines_screen.dart          # Deadlines tab: critical / this week / later, countdowns
-│   └── subscription_form_screen.dart  # Add / edit / delete a subscription
+│   ├── alerts_screen.dart             # Alerts tab: urgent / scheduled / history + reminder settings
+│   ├── analytics_screen.dart          # Analytics tab: charts, top costs, smart insights
+│   ├── account_sheet.dart             # Account settings: password, sign out, delete account
+│   └── subscription_form_screen.dart  # Add / edit / remove a subscription
 │
 ├── widgets/
-│   └── app_widgets.dart               # Shared widgets (layout, fields, buttons, logo tiles, badges)
+│   ├── app_widgets.dart               # Shared widgets (layout, fields, buttons, stat cards, badges)
+│   └── charts.dart                    # Donut, bar and meter charts (drawn by hand, no package)
 │
 └── utils/
     └── validators.dart                # Form validation (name, email, password)
@@ -89,7 +132,12 @@ assets/
 └── icons/                         # Service logos + Google "G"
 
 test/
-└── widget_test.dart               # Unit tests (validators, costs, dates, logos, formatting)
+├── widget_test.dart               # Unit tests (validators, costs, dates, logos, formatting)
+├── analytics_test.dart            # Analytics, insights, reminders, CSV, input validation
+└── screens_test.dart              # Widget tests for the Analytics screen (phone + web)
+
+firestore.rules                    # Firestore security rules (deployed with the Firebase CLI)
+firebase.json                      # Firebase Hosting + Firestore config
 ```
 
 ### How it fits together
@@ -109,7 +157,9 @@ users/{uid}                          # name, email, createdAt
 users/{uid}/subscriptions/{id}       # name, category, price, currency, cycle, reminders,
                                      # nextRenewal, isTrial, paymentMethod, cancelUrl
 users/{uid}/subscriptions/{id}/payments/{id}  # amount, currency, paidAt, forRenewal
+users/{uid}/cancelled/{id}           # name, monthlyCost, currency, cancelledAt (for "saved to date")
 ```
+`users/{uid}` also stores `reminderSettings` (on/off and hour), and subscriptions store `previousPrice` after a price change.
 
 ---
 
@@ -122,16 +172,9 @@ users/{uid}/subscriptions/{id}/payments/{id}  # amount, currency, paidAt, forRen
 ### 2. Firebase setup
 1. **Authentication → Sign-in method:** enable **Email/Password** and **Google**.
 2. **Firestore Database:** create the `(default)` database (we used `asia-south1`).
-3. **Firestore → Rules:** paste these rules and publish them. Each user can only access their own data.
-   ```
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /users/{uid}/{document=**} {
-         allow read, write: if request.auth != null && request.auth.uid == uid;
-       }
-     }
-   }
+3. **Firestore rules:** deploy [firestore.rules](firestore.rules). Each user can only access their own data, and every write is validated.
+   ```bash
+   firebase deploy --only firestore:rules
    ```
 4. **Android Google sign-in:**
    - Add your SHA-1 fingerprint under Project settings → Your apps → Android.
@@ -153,6 +196,17 @@ flutter test
 flutter analyze
 ```
 
+### 5. Deploy
+```bash
+# Web → Firebase Hosting (https://subscription-box-app-9ad03.web.app)
+flutter build web --release
+firebase deploy --only hosting,firestore:rules
+
+# Android → build/app/outputs/flutter-apk/app-release.apk
+flutter build apk --release
+```
+For the web build, add the hosting domain under **Authentication → Settings → Authorized domains** if Google sign-in shows an "unauthorized domain" error.
+
 > **Windows note:** `android/gradle.properties` sets `kotlin.incremental=false` because the project (D:) and the pub cache (C:) are on different drives, which breaks Kotlin's incremental build cache.
 
 ---
@@ -164,8 +218,8 @@ flutter analyze
 | 1 | Project Setup, Firebase Integration & User Authentication | Sep 27, 2026 | ✅ Done |
 | 2 | Subscription Management, Categories & Firestore CRUD | Oct 04, 2026 | ✅ Done |
 | 3 | Payment Tracking, Renewals & Notifications | Oct 11, 2026 | ✅ Done |
-| 4 | Dashboard, Expense Analytics & Smart Subscription Insights | Oct 18, 2026 | ⏳ Next |
-| 5 | Testing, Security, UI/UX Refinement & Final Deployment | Oct 25, 2026 | Planned |
+| 4 | Dashboard, Expense Analytics & Smart Subscription Insights | Oct 18, 2026 | ✅ Done |
+| 5 | Testing, Security, UI/UX Refinement & Final Deployment | Oct 25, 2026 | ✅ Done |
 
 ---
 

@@ -1,0 +1,84 @@
+rules_version = '2';
+
+// SubBox security rules: every user can only read and write their own data,
+// and every write is checked for the right fields and types.
+// Deploy with: firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function isText(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    function isAmount(v) {
+      return v is number && v >= 0 && v < 10000000;
+    }
+
+    function validSubscription(d) {
+      return d.keys().hasOnly(['name', 'category', 'price', 'currency',
+                               'cycle', 'nextRenewal', 'isTrial',
+                               'paymentMethod', 'cancelUrl', 'reminders',
+                               'previousPrice'])
+        && isText(d.name, 60) && d.name.size() > 0
+        && isText(d.category, 40)
+        && isAmount(d.price) && d.price > 0
+        && d.currency in ['USD', 'PKR', 'EUR', 'GBP']
+        && d.cycle in ['Weekly', 'Monthly', 'Quarterly', 'Yearly']
+        && d.nextRenewal is timestamp
+        && d.isTrial is bool
+        && isText(d.paymentMethod, 40)
+        && isText(d.cancelUrl, 500)
+        && d.reminders is list && d.reminders.size() <= 4
+        && (d.get('previousPrice', null) == null
+            || isAmount(d.previousPrice));
+    }
+
+    match /users/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(
+             ['name', 'email', 'createdAt', 'reminderSettings'])
+        && (request.resource.data.get('reminderSettings', null) == null
+            || (request.resource.data.reminderSettings.enabled is bool
+                && request.resource.data.reminderSettings.hour is int
+                && request.resource.data.reminderSettings.hour >= 0
+                && request.resource.data.reminderSettings.hour <= 23));
+
+      match /subscriptions/{subId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && validSubscription(request.resource.data);
+
+        // Payments are a record: they can be added or deleted (with the
+        // account), never edited.
+        match /payments/{paymentId} {
+          allow read, delete: if isOwner(uid);
+          allow create: if isOwner(uid)
+            && request.resource.data.keys().hasOnly(
+                 ['amount', 'currency', 'paidAt', 'forRenewal'])
+            && isAmount(request.resource.data.amount)
+            && request.resource.data.currency is string
+            && request.resource.data.paidAt is timestamp
+            && request.resource.data.forRenewal is timestamp;
+        }
+      }
+
+      match /cancelled/{id} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(
+               ['name', 'monthlyCost', 'currency', 'cancelledAt'])
+          && isText(request.resource.data.name, 60)
+          && isAmount(request.resource.data.monthlyCost)
+          && request.resource.data.currency is string
+          && request.resource.data.cancelledAt is timestamp;
+      }
+    }
+
+    // Everything else is denied by default.
+  }
+}

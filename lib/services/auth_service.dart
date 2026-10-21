@@ -58,6 +58,26 @@ class AuthService {
   Future<void> resetPassword(String email) =>
       _run(() => _auth.sendPasswordResetEmail(email: email.trim()));
 
+  /// Signed in with email/password (so a password reset makes sense).
+  bool get hasPassword =>
+      _auth.currentUser?.providerData.any((p) => p.providerId == 'password') ??
+      false;
+
+  /// Permanently deletes the user's data ([deleteData]) and then the account.
+  /// Firebase only allows this shortly after signing in, so that is checked
+  /// first: otherwise the data could be deleted while the account remains.
+  Future<void> deleteAccount(Future<void> Function() deleteData) =>
+      _run(() async {
+        final user = _auth.currentUser!;
+        final signedIn = user.metadata.lastSignInTime ?? DateTime(2000);
+        if (DateTime.now().difference(signedIn).inMinutes >= 5) {
+          throw FirebaseAuthException(code: 'requires-recent-login');
+        }
+        await deleteData();
+        await user.delete();
+        if (!kIsWeb) await GoogleSignIn.instance.signOut();
+      });
+
   Future<void> signOut() async {
     if (!kIsWeb) await GoogleSignIn.instance.signOut();
     await _auth.signOut();
@@ -95,6 +115,8 @@ class AuthService {
         'Enable Email/Password sign-in in the Firebase Console.',
     'permission-denied': 'Firestore rules blocked saving your profile.',
     'popup-closed-by-user': 'Sign-in cancelled.',
+    'requires-recent-login':
+        'For your security, sign out and sign in again, then retry.',
     'account-exists-with-different-credential':
         'This email already uses password sign-in. Sign in with your password.',
   };
